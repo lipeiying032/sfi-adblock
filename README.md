@@ -59,6 +59,16 @@
 5. 打开 **MITM Ad Block** 总开关并重启 VPN；
 6. 回来可以看到 Status / Intercepted / Rewrites / Rule Blocks / Fallbacks 计数；**View MITM Rules** 可搜索当前生效的 host 与 rewrite 规则。
 
+## 诊断页：VPN 权限探测
+
+设置 → **About** → **VPN 权限探测**（`ApplicationLibrary/Views/Setting/VPNPermissionProbeView.swift`）：
+
+- **SecTask**：通过 `dlsym` 调用 `SecTaskCreateFromSelf` + `SecTaskCopyValueForEntitlement`（iOS SDK 不导出该头文件），读取运行时真实 entitlements；`networkextension` / `vpn.api` 两个 key **有/无都显式打印**。
+- **签名二进制**：直接解析主可执行文件的 Mach-O `LC_CODE_SIGNATURE` → CodeSigning SuperBlob → `CSSLOT_ENTITLEMENTS`，展开**完整签名 entitlements 字典**（XML plist）；只有 DER 槽位时会明确提示。
+- **描述文件**：解析 `embedded.mobileprovision`（CMS 里的 XML plist），显示 profile 的完整 `Entitlements`、TeamIdentifier、过期时间。
+- **实测**：`NEVPNManager.shared().loadFromPreferences` → 最小 `NEVPNProtocolIKEv2`（server=127.0.0.1、remoteIdentifier=sfi-adblock-probe、无账号）→ `saveToPreferences`，原文显示 error domain / code / localizedDescription；保存成功会立即 remove 清理。
+- 右上角/底部 **复制结果** 按钮可复制全部诊断文本。
+
 ## 构建
 
 与 M1 相同的 workflow：`.github/workflows/build-ipa.yml`，`macos-26`，从零 checkout 上游 → 覆盖 overlay → `go test ./common/mitm` → 构建 `Libbox.xcframework` → `xcodebuild`（关闭签名）→ 打包 IPA → artifact。

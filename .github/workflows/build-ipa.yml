@@ -128,7 +128,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            OTHER_LDFLAGS="-framework Security" \
+            OTHER_LDFLAGS="-framework Security -framework NetworkExtension" \
             BASE_PACKAGE_IDENTIFIER="$BASE_PACKAGE_IDENTIFIER" \
             APP_GROUP_IDENTIFIER="$APP_GROUP_IDENTIFIER"
 

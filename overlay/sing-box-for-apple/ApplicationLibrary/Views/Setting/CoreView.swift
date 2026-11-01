@@ -236,7 +236,10 @@ public struct CoreView: View {
 
     private func generateMITMCA() async {
         do {
-            try LibboxRequestMITMCA(mitmCADirectoryPath())
+            var requestError: NSError?
+            if !LibboxRequestMITMCA(mitmCADirectoryPath(), &requestError), let requestError {
+                throw requestError
+            }
             await restartIfConnected()
             await refreshMITMStatus()
         } catch {
@@ -246,7 +249,10 @@ public struct CoreView: View {
 
     private func deleteMITMCA() async {
         do {
-            try LibboxRequestDeleteMITMCA(mitmCADirectoryPath())
+            var requestError: NSError?
+            if !LibboxRequestDeleteMITMCA(mitmCADirectoryPath(), &requestError), let requestError {
+                throw requestError
+            }
             await restartIfConnected()
             await refreshMITMStatus()
         } catch {

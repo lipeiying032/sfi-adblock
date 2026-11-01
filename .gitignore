@@ -1,0 +1,7 @@
+.DS_Store
+/build/
+/DerivedData/
+*.ipa
+/Libbox.xcframework/
+/sing-box/
+/sing-box-for-apple/

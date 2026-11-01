@@ -1,0 +1,165 @@
+name: Build unsigned IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BASE_PACKAGE_IDENTIFIER: io.nekohasekai.sfa
+  APP_GROUP_IDENTIFIER: group.io.nekohasekai.sfa
+
+jobs:
+  build:
+    name: Build unsigned IPA (macOS 26 / Xcode 26)
+    runs-on: macos-26
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout build repository
+        uses: actions/checkout@v4
+
+      - name: Checkout sing-box core (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: SagerNet/sing-box
+          ref: e5d91fa79f6319d5de940d6c81d81f0fe53b9476
+          path: sing-box
+          fetch-depth: 1
+
+      - name: Checkout sing-box-for-apple (pinned, with Runestone submodule)
+        uses: actions/checkout@v4
+        with:
+          repository: SagerNet/sing-box-for-apple
+          ref: 0d1b59fc5e58c8e6b2239e576e4fd979c502a8fb
+          path: sing-box-for-apple
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Apply ad-block overlay
+        run: |
+          set -euo pipefail
+          cp -R overlay/sing-box/. sing-box/
+          cp -R overlay/sing-box-for-apple/. sing-box-for-apple/
+          echo "--- core changes ---"
+          git -C sing-box status --short
+          echo "--- apple changes ---"
+          git -C sing-box-for-apple status --short
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          sw_vers
+
+      - name: Trust Xcode package plugins
+        run: defaults write com.apple.dt.Xcode IDESkipPackagePluginFingerprintValidatation -bool YES
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+          cache: false
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: go-mod-${{ runner.os }}-${{ hashFiles('sing-box/go.sum') }}
+          restore-keys: go-mod-${{ runner.os }}-
+
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/go-build
+          key: go-build-${{ runner.os }}-${{ hashFiles('sing-box/go.sum') }}
+          restore-keys: go-build-${{ runner.os }}-
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/SourcePackages
+          key: spm-${{ hashFiles('sing-box-for-apple/sing-box.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-
+
+      - name: Patch Go toolchain for iOS
+        working-directory: sing-box
+        run: |
+          git tag -f v1.15.0-alpha.13
+          bash .github/patch_go_for_ios.sh
+
+      - name: Install gomobile
+        working-directory: sing-box
+        run: |
+          make lib_install
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build Libbox.xcframework
+        working-directory: sing-box
+        env:
+          GOTOOLCHAIN: local
+        run: |
+          set -euo pipefail
+          go run ./cmd/internal/build_libbox -target apple -platform ios/arm64
+          ls -la ../sing-box-for-apple/Libbox.xcframework
+
+      - name: Build unsigned app
+        working-directory: sing-box-for-apple
+        env:
+          DISABLE_SWIFTLINT: "1"
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project sing-box.xcodeproj \
+            -scheme SFI \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            BASE_PACKAGE_IDENTIFIER="$BASE_PACKAGE_IDENTIFIER" \
+            APP_GROUP_IDENTIFIER="$APP_GROUP_IDENTIFIER"
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP"
+          echo "APP=$APP" >> "$GITHUB_ENV"
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")
+          EXEC=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")
+          echo "bundle id: $BUNDLE_ID"
+          echo "executable: $EXEC"
+          lipo -info "$APP/$EXEC"
+          rm -rf "$RUNNER_TEMP/ipa"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/sfi-adblock-unsigned.ipa" Payload)
+          ls -lh "$GITHUB_WORKSPACE/sfi-adblock-unsigned.ipa"
+          unzip -l "$GITHUB_WORKSPACE/sfi-adblock-unsigned.ipa" | head -15
+          {
+            echo "### Unsigned IPA"
+            echo ""
+            echo "- bundle id: \`$BUNDLE_ID\`"
+            echo "- executable: \`$EXEC\`"
+            echo "- ipa: $(du -h "$GITHUB_WORKSPACE/sfi-adblock-unsigned.ipa" | cut -f1)"
+            lipo -info "$APP/$EXEC" | sed 's/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify IPA structure on runner
+        run: bash scripts/verify_ipa.sh sfi-adblock-unsigned.ipa io.nekohasekai.sfa.application
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sfi-adblock-unsigned-ipa
+          path: sfi-adblock-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30

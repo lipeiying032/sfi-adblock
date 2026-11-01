@@ -1,6 +1,8 @@
 # sfi-adblock
 
-**sing-box for iOS 的最小「去广告」改造**：内置一份广告/追踪域名清单，在连接层直接 `reject`，**零解密、零 CA、零新依赖**。
+**sing-box for iOS 的去广告改造（M2：可视化 MITM 去广告）**。
+
+> **M1 已废弃**：M1 只是 `DomainSuffix` + `reject` 的域名拦截，挡不住同域广告、路径级广告和 CNAME 伪装。M1 代码保留在 `m1-domain-block` 分支，`main` 已回退并转向 M2。
 
 本仓库只存放改动（`overlay/`）、构建脚本和 GitHub Actions；上游源码在 CI 里按固定 commit 拉取，从零可复现出**未签名 IPA**。
 

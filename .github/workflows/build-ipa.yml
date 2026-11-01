@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   BASE_PACKAGE_IDENTIFIER: io.nekohasekai.sfa
@@ -40,15 +40,15 @@ jobs:
           fetch-depth: 1
           submodules: recursive
 
-      - name: Apply ad-block overlay
+      - name: Apply overlay (if present)
         run: |
           set -euo pipefail
-          cp -R overlay/sing-box/. sing-box/
-          cp -R overlay/sing-box-for-apple/. sing-box-for-apple/
+          if [ -d overlay/sing-box ]; then cp -R overlay/sing-box/. sing-box/; fi
+          if [ -d overlay/sing-box-for-apple ]; then cp -R overlay/sing-box-for-apple/. sing-box-for-apple/; fi
           echo "--- core changes ---"
-          git -C sing-box status --short
+          git -C sing-box status --short || true
           echo "--- apple changes ---"
-          git -C sing-box-for-apple status --short
+          git -C sing-box-for-apple status --short || true
 
       - name: Show toolchain
         run: |

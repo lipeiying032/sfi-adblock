@@ -57,7 +57,7 @@ private struct MITMRewriteInfo: Codable, Identifiable {
     var replacement: String?
     var action: String
     var module: String
-    var id: String { pattern + action + module }
+    var id: String { pattern + action + module + (replacement ?? "") }
 }
 
 private struct MITMRuleInfo: Codable, Identifiable {
@@ -74,8 +74,6 @@ private struct MITMRulesViewData: Codable {
     var rewrites: [MITMRewriteInfo]
     var rules: [MITMRuleInfo]
     var modules: [String]
-
-    static let empty = MITMRulesViewData(hosts: [], excludes: [], rewrites: [], rules: [], modules: [])
 }
 
 private func mitmCADirectoryPath() -> String {
@@ -384,16 +382,44 @@ public struct CoreView: View {
         .fileImporter(isPresented: $mitmShowImporter, allowedContentTypes: [UTType(filenameExtension: "sgmodule") ?? .data, .plainText, .data], allowsMultipleSelection: true) { result in
             Task { await importModules(result) }
         }
-        .alert("Import Module from URL", isPresented: $mitmShowURLImport) {
-            TextField("https://example.com/module.sgmodule", text: $mitmImportURL)
-            Button("Import") {
-                Task { await importModuleFromURL() }
+        .sheet(isPresented: $mitmShowURLImport) {
+            NavigationView {
+                Form {
+                    Section {
+                        #if os(iOS)
+                            TextField("https://example.com/module.sgmodule", text: $mitmImportURL)
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                                .keyboardType(.URL)
+                        #else
+                            TextField("https://example.com/module.sgmodule", text: $mitmImportURL)
+                                .autocorrectionDisabled()
+                        #endif
+                    } header: {
+                        Text("Module URL")
+                    } footer: {
+                        Text("The .sgmodule content is downloaded and stored in the app group.")
+                    }
+                    Section {
+                        Button("Import") {
+                            Task { await importModuleFromURL() }
+                        }
+                        .disabled(mitmImportURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                .navigationTitle("Import from URL")
+                #if os(iOS)
+                    .navigationBarTitleDisplayMode(.inline)
+                #endif
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            mitmShowURLImport = false
+                            mitmImportURL = ""
+                        }
+                    }
+                }
             }
-            Button("Cancel", role: .cancel) {
-                mitmImportURL = ""
-            }
-        } message: {
-            Text("The .sgmodule content is downloaded and stored in the app group.")
         }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -540,7 +566,7 @@ public struct CoreView: View {
             summary += "\nIgnored \(module.scripts) lines in [Script] (JavaScript is not supported)"
         }
         if let skipped = module.skipped, skipped > 0 {
-            summary += "\nIgnored \(skipped) unsupported lines (header/body rewrite, templates)"
+            summary += "\nIgnored \(skipped) unsupported lines (lookaround regex, header/body rewrite, templates)"
         }
         if let ignored = module.ignored, !ignored.isEmpty {
             summary += "\nIgnored sections: \(ignored.joined(separator: ", "))"
@@ -589,12 +615,14 @@ public struct CoreView: View {
                 throw NSError(domain: "sfi-adblock", code: 1, userInfo: [NSLocalizedDescriptionKey: "Module is not UTF-8 text"])
             }
             let summary = try importModuleContent(content)
+            mitmShowURLImport = false
             await refreshMITMData()
             await restartIfConnected()
             await refreshMITMStatus()
             mitmImportURL = ""
             alert = AlertState(title: "Module Imported", message: summary)
         } catch {
+            mitmShowURLImport = false
             alert = AlertState(action: "import module from URL", error: error)
         }
     }

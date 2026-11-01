@@ -46,7 +46,9 @@
 | `Library/Network/ExtensionProvider.swift` | 启动/重载时把开关与路径传给 Go |
 | `Library/Network/ExtensionProfile.swift` | 把开关与 CA/模块目录写进 start options |
 | `Library/Database/SharedPreferences.swift` | `mitm_enabled` 偏好（默认 false） |
-| `ApplicationLibrary/Views/Setting/CoreView.swift` | 设置页 MITM 区块（开关/CA/状态计数） |
+| `ApplicationLibrary/Views/Setting/CoreView.swift` | 设置页 MITM 区块（开关/CA/模块管理/规则列表/状态计数） |
+| `sing-box.xcodeproj/project.pbxproj` | 仅把 SFI / ApplicationLibrary 的 iOS deployment target 从 15.0 提到 16.0 |
+| `scripts/verify_ipa_linux.py` | 无 Xcode 环境下校验 IPA（bundle id / arm64 / MITM 字符串） |
 
 ## 使用
 
@@ -79,7 +81,7 @@ gh run download -R lipeiying032/sfi-adblock -n sfi-adblock-unsigned-ipa -D artif
 ## 已知限制
 
 - 未签名 IPA，需要自签；Network Extension 还需要 `packet-tunnel-provider` entitlement 与 App Group（上游 App 本身就依赖 App Group）；
-- CI 用 Xcode 26 构建，产物最低 iOS 16.0（上游默认 15.0，Xcode 26 的 SwiftUI `buildIf` 可用性检查要求 16.0，workflow 里用 `IPHONEOS_DEPLOYMENT_TARGET=16.0` 覆盖）；
+- CI 用 Xcode 26 构建；`SFI` 与 `ApplicationLibrary` 这两个 target 在 overlay 的 `project.pbxproj` 里单独提到 iOS 16.0（上游是 15.0，Xcode 26 的 SwiftUI `buildIf` 检查会拒绝 15.0 下的 toolbar/`#available` 写法），`WidgetExtension` 保持上游的 18.0；
 - CA 由隧道进程生成（Keychain 默认访问组），因此生成/删除 CA 需要隧道处于连接状态；未连接时操作会排队，下次启动生效；
 - 未签名构建通常没有 keychain entitlement，此时 CA 私钥降级存 App Group 文件（`0600`）。要严格只用 Keychain，需要自签时带上 keychain access group；
 - CA 信任检查依赖系统 trust store；若检查结果不可用（`Force Decrypt` 可覆盖），解密不会启动；

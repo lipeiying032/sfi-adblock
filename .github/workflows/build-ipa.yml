@@ -129,7 +129,6 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             OTHER_LDFLAGS="-framework Security" \
-            IPHONEOS_DEPLOYMENT_TARGET=16.0 \
             BASE_PACKAGE_IDENTIFIER="$BASE_PACKAGE_IDENTIFIER" \
             APP_GROUP_IDENTIFIER="$APP_GROUP_IDENTIFIER"
 

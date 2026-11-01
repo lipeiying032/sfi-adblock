@@ -3,7 +3,9 @@
 set -euo pipefail
 
 IPA="${1:-sfi-adblock-unsigned.ipa}"
-EXPECTED_BUNDLE_ID="${2:-io.nekohasekai.sfa.application}"
+# The SFI app target is $(BASE_PACKAGE_IDENTIFIER); the ".application" suffix
+# belongs to the shared ApplicationLibrary framework, not the app.
+EXPECTED_BUNDLE_ID="${2:-io.nekohasekai.sfa}"
 
 [[ -f "$IPA" ]] || { echo "missing $IPA" >&2; exit 1; }
 
@@ -14,8 +16,8 @@ unzip -q "$IPA" -d "$WORK"
 APP="$(find "$WORK/Payload" -maxdepth 1 -name '*.app' -print -quit)"
 [[ -n "$APP" ]] || { echo "no Payload/*.app" >&2; exit 1; }
 
-BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
-EXEC="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")"
+BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+EXEC="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
 
 echo "app:       $APP"
 echo "bundle id: $BUNDLE_ID"
@@ -23,6 +25,6 @@ echo "executable:$EXEC"
 lipo -info "$APP/$EXEC" || true
 du -sh "$IPA"
 
-[[ "$BUNDLE_ID" == "$EXPECTED_BUNDLE_ID" ]] || { echo "unexpected bundle id" >&2; exit 1; }
+[[ "$BUNDLE_ID" == "$EXPECTED_BUNDLE_ID" ]] || { echo "unexpected bundle id: got [$BUNDLE_ID], want [$EXPECTED_BUNDLE_ID]" >&2; exit 1; }
 lipo -info "$APP/$EXEC" | grep -q arm64
 echo "OK"

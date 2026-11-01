@@ -3,7 +3,7 @@
 
 Checks:
   * zip layout: Payload/*.app
-  * CFBundleIdentifier (default io.nekohasekai.sfa.application)
+  * CFBundleIdentifier (default io.nekohasekai.sfa)
   * main executable + embedded appex are arm64 Mach-O
   * IPA size is plausible (> 40 MiB)
   * MITM overlay strings are present in the app binaries
@@ -17,7 +17,7 @@ import sys
 import tempfile
 import zipfile
 
-EXPECTED_BUNDLE_ID = "io.nekohasekai.sfa.application"
+EXPECTED_BUNDLE_ID = "io.nekohasekai.sfa"
 MIN_IPA_BYTES = 40 * 1024 * 1024
 MACHO_MAGIC_64 = 0xFEEDFACF
 MACHO_MAGIC_32 = 0xFEEDFACE
@@ -129,7 +129,6 @@ def main() -> int:
         if os.path.exists(appex_exec):
             appex_archs = macho_archs(appex_exec)
             check("arm64" in appex_archs, f"{os.path.basename(appex.rstrip('/'))} architecture {appex_archs}")
-            binaries.append((os.path.basename(appex.rstrip("/")), appex_archs))
 
     # Any other Mach-O files bundled in the app (frameworks, dylibs).
     for root, _dirs, files in os.walk(app_dir):

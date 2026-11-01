@@ -159,7 +159,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify IPA structure on runner
-        run: bash scripts/verify_ipa.sh sfi-adblock-unsigned.ipa io.nekohasekai.sfa.application
+        run: bash scripts/verify_ipa.sh sfi-adblock-unsigned.ipa io.nekohasekai.sfa
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4

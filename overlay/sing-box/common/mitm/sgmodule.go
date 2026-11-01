@@ -33,6 +33,7 @@ type Module struct {
 	Rewrites        []*rewriteRule
 	Rules           []domainRule
 	ScriptCount     int
+	Skipped         int
 	IgnoredSections []string
 	Enabled         bool
 	Path            string
@@ -48,6 +49,7 @@ type moduleInfo struct {
 	Rewrites    int      `json:"rewrites"`
 	Rules       int      `json:"rules"`
 	Scripts     int      `json:"scripts"`
+	Skipped     int      `json:"skipped"`
 	Ignored     []string `json:"ignored,omitempty"`
 }
 
@@ -84,9 +86,18 @@ func (m *Module) info() moduleInfo {
 		Rewrites:    len(m.Rewrites),
 		Rules:       len(m.Rules),
 		Scripts:     m.ScriptCount,
+		Skipped:     m.Skipped,
 		Ignored:     m.IgnoredSections,
 	}
 	return info
+}
+
+func isRewriteAction(value string) bool {
+	switch strings.ToLower(strings.Trim(value, "\"'`")) {
+	case "reject", "reject-200", "reject-img", "reject-dict", "reject-array", "302", "307", "302-302", "307-307", "header":
+		return true
+	}
+	return false
 }
 
 func parseModule(content string) *Module {
@@ -120,46 +131,76 @@ func parseModule(content string) *Module {
 			if !found || !strings.EqualFold(strings.TrimSpace(key), "hostname") {
 				continue
 			}
-			for _, host := range strings.Split(value, ",") {
-				host = strings.TrimSpace(host)
-				host = strings.TrimPrefix(strings.TrimPrefix(host, "%APPEND%"), "%append%")
-				host = strings.TrimSpace(host)
+			for _, rawHost := range strings.Split(value, ",") {
+				rawHost = strings.TrimSpace(rawHost)
+				for _, marker := range []string{"%APPEND%", "%append%", "%INSERT%", "%insert%"} {
+					rawHost = strings.TrimPrefix(rawHost, marker)
+				}
+				rawHost = strings.TrimSpace(rawHost)
+				if rawHost == "" {
+					continue
+				}
+				exclude := strings.HasPrefix(rawHost, "-")
+				host := normalizePattern(strings.TrimPrefix(rawHost, "-"))
 				if host == "" {
+					module.Skipped++
 					continue
 				}
-				if strings.HasPrefix(host, "-") {
-					module.Excludes = append(module.Excludes, strings.TrimPrefix(host, "-"))
-					continue
+				if exclude {
+					module.Excludes = append(module.Excludes, host)
+				} else {
+					module.Hosts = append(module.Hosts, host)
 				}
-				module.Hosts = append(module.Hosts, host)
 			}
 		case "url rewrite":
 			fields := strings.Fields(line)
 			if len(fields) < 2 {
+				module.Skipped++
 				continue
 			}
-			pattern := strings.Trim(fields[0], "\"'")
-			replacement := strings.Trim(fields[1], "\"'")
-			action := ""
-			if len(fields) >= 3 {
-				action = strings.ToLower(fields[2])
+			pattern := strings.Trim(fields[0], "\"'`")
+			var replacement, action string
+			switch {
+			case len(fields) >= 3:
+				replacement = strings.Trim(fields[1], "\"'`")
+				action = strings.ToLower(strings.Trim(fields[2], "\"'`"))
+			case isRewriteAction(fields[1]):
+				replacement = "-"
+				action = strings.ToLower(strings.Trim(fields[1], "\"'`"))
+			default:
+				replacement = strings.Trim(fields[1], "\"'`")
+			}
+			switch action {
+			case "302-302":
+				action = "302"
+			case "307-307":
+				action = "307"
 			}
 			if action == "" {
-				if replacement == "-" {
+				switch {
+				case replacement == "-" || replacement == "_":
 					action = "reject"
-				} else if strings.HasPrefix(replacement, "http") {
+				case strings.HasPrefix(strings.ToLower(replacement), "http"):
 					action = "302"
-				} else {
-					action = "reject"
+				default:
+					module.Skipped++
+					continue
 				}
 			}
 			switch action {
-			case "reject", "reject-200", "reject-img", "reject-dict", "reject-array", "302", "307":
+			case "reject", "reject-200", "reject-img", "reject-dict", "reject-array":
+			case "302", "307":
+				if replacement == "" || replacement == "-" || replacement == "_" || strings.Contains(replacement, "{{") {
+					module.Skipped++
+					continue
+				}
 			default:
+				module.Skipped++
 				continue
 			}
 			compiled, err := regexp.Compile(pattern)
 			if err != nil {
+				module.Skipped++
 				continue
 			}
 			module.Rewrites = append(module.Rewrites, &rewriteRule{

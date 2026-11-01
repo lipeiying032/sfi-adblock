@@ -44,6 +44,7 @@ open class ExtensionProvider: NEPacketTunnelProvider {
 
     private func applyMITMOptions(_ options: [String: NSObject]) {
         LibboxSetMITMEnabled((options["mitmEnabled"] as? NSNumber)?.boolValue ?? false)
+        LibboxSetMITMCAForce((options["mitmCAForce"] as? NSNumber)?.boolValue ?? false)
         guard let caDirectory = options["mitmCADir"] as? String,
               let modulesDirectory = options["mitmModulesDir"] as? String
         else {

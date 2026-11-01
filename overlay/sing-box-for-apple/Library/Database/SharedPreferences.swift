@@ -58,6 +58,8 @@ public enum SharedPreferences {
 
     public static let mitmEnabled = Preference<Bool>("mitm_enabled", defaultValue: false)
 
+    public static let mitmCAForce = Preference<Bool>("mitm_ca_force", defaultValue: false)
+
     #if os(macOS)
         public static let oomKillerEnabled = Preference<Bool>("oom_killer_enabled", defaultValue: false)
         public static let oomMemoryLimitMB = Preference<Int>("oom_memory_limit_mb", defaultValue: 50)

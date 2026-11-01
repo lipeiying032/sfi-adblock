@@ -7,6 +7,11 @@ func SetMITMEnabled(enabled bool) {
 	mitm.SetEnabled(enabled)
 }
 
+// SetMITMCAForce allows decryption when the CA trust check is inconclusive.
+func SetMITMCAForce(enabled bool) {
+	mitm.SetCAForce(enabled)
+}
+
 // SetMITMPaths configures the CA directory and the imported module directory.
 func SetMITMPaths(caPath, modulesPath string) {
 	mitm.SetPaths(caPath, modulesPath)
@@ -28,8 +33,8 @@ func MITMCAInfo(directory string) string {
 }
 
 // MITMStats returns runtime counters as JSON.
-func MITMStats() string {
-	return mitm.StatsJSON()
+func MITMStats(directory string) string {
+	return mitm.StatsJSON(directory)
 }
 
 // ImportMITMModule parses and stores a .sgmodule, returning its summary as JSON.

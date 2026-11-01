@@ -26,6 +26,11 @@ func keychainGet(dir string) ([]byte, error) {
 	return data, err
 }
 
+// caTrustState is only meaningful on Apple platforms.
+func caTrustState([]byte) int {
+	return -1
+}
+
 func keychainDelete(dir string) error {
 	err := os.Remove(keychainKeyPath(dir))
 	if os.IsNotExist(err) {

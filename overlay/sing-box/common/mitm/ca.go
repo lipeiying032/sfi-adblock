@@ -223,6 +223,7 @@ func RequestGenerateCA(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	_ = os.Remove(filepath.Join(dir, deleteFlag))
 	return os.WriteFile(filepath.Join(dir, generateFlag), []byte("1"), 0o600)
 }
 
@@ -231,6 +232,7 @@ func RequestDeleteCA(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	_ = os.Remove(filepath.Join(dir, generateFlag))
 	return os.WriteFile(filepath.Join(dir, deleteFlag), []byte("1"), 0o600)
 }
 

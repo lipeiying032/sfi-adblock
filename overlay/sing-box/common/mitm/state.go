@@ -2,6 +2,7 @@ package mitm
 
 import (
 	"crypto/tls"
+	"errors"
 	"sync"
 	"sync/atomic"
 )
@@ -9,12 +10,14 @@ import (
 var (
 	enabled atomic.Bool
 	active  atomic.Bool
+	caForce atomic.Bool
 	caDir   atomic.Value
 	modsDir atomic.Value
 )
 
 type runtimeConfig struct {
 	ca        *CA
+	caTrusted bool
 	matcher   *hostMatcher
 	rewrites  []*rewriteRule
 	block     []domainRule
@@ -42,6 +45,12 @@ func IsActive() bool {
 	return enabled.Load() && active.Load()
 }
 
+// SetCAForce allows decryption even when the CA trust check fails. It is an
+// explicit user opt-in for builds where SecTrust cannot see the installed CA.
+func SetCAForce(value bool) {
+	caForce.Store(value)
+}
+
 // SetPaths configures where the CA and imported modules live.
 func SetPaths(caPath, modulesPath string) {
 	caDir.Store(caPath)
@@ -63,6 +72,7 @@ func currentConfig() *runtimeConfig {
 // Prepare reloads the CA and the enabled Shadowrocket modules.
 // It is called at service start/reload, before box.New.
 func Prepare() {
+	startMemoryMonitor()
 	caPath, modulesPath := storedPaths()
 	if caPath == "" {
 		active.Store(false)
@@ -74,9 +84,10 @@ func Prepare() {
 		active.Store(false)
 		return
 	}
+	var prepareErr error
 	modules, err := loadEnabledModules(modulesPath)
 	if err != nil {
-		setLastError(err)
+		prepareErr = err
 	}
 	hosts := make([]string, 0, 64)
 	excludes := make([]string, 0, 16)
@@ -96,11 +107,20 @@ func Prepare() {
 		modules:  len(modules),
 	}
 	if mitmCA != nil {
-		newConfig.tlsConfig = newServerTLSConfig(mitmCA)
+		state := caTrustState(mitmCA.cert.Raw)
+		newConfig.caTrusted = state == 1 || caForce.Load()
+		if newConfig.caTrusted {
+			newConfig.tlsConfig = newServerTLSConfig(mitmCA)
+		} else if state == 0 {
+			prepareErr = errors.New("mitm: CA is not installed or not fully trusted; decryption disabled")
+		} else {
+			prepareErr = errors.New("mitm: cannot verify CA trust; enable Force Decrypt to override")
+		}
 	}
 	cfgAccess.Lock()
 	cfg = newConfig
 	cfgAccess.Unlock()
-	setLastError(nil)
+	setLastError(prepareErr)
 	active.Store(true)
+	flushStats()
 }

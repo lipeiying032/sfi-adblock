@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -192,6 +193,13 @@ func blindRelay(ctx context.Context, client *tls.Conn, reader *bufio.Reader, met
 
 func serveMITM(ctx context.Context, conn net.Conn, metadata *adapter.InboundContext, host string, dialer N.Dialer, onClose N.CloseHandlerFunc) {
 	defer func() { <-connSlots }()
+	defer flushStats()
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			metrics.fallbacks.Add(1)
+			setLastError(fmt.Errorf("mitm: panic: %v", recovered))
+		}
+	}()
 	handshakeHeld := true
 	releaseHandshake := func() {
 		if handshakeHeld {
@@ -205,8 +213,15 @@ func serveMITM(ctx context.Context, conn net.Conn, metadata *adapter.InboundCont
 	metrics.activeConns.Add(1)
 	defer metrics.activeConns.Add(-1)
 
+	var tlsConn *tls.Conn
 	var finalErr error
 	defer func() {
+		if tlsConn != nil {
+			// Bound the close_notify write so a vanished client cannot stall the
+			// connection lifecycle callback below.
+			_ = tlsConn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+			_ = tlsConn.Close()
+		}
 		if onClose != nil {
 			onClose(finalErr)
 		}
@@ -216,7 +231,7 @@ func serveMITM(ctx context.Context, conn net.Conn, metadata *adapter.InboundCont
 	if current == nil || current.ca == nil || current.tlsConfig == nil {
 		return
 	}
-	tlsConn := tls.Server(conn, current.tlsConfig)
+	tlsConn = tls.Server(conn, current.tlsConfig)
 	handshakeContext, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	err := tlsConn.HandshakeContext(handshakeContext)
 	cancel()
@@ -266,6 +281,8 @@ func serveMITM(ctx context.Context, conn net.Conn, metadata *adapter.InboundCont
 			upstream, err = dialUpstream(ctx, dialer, metadata, host)
 			if err != nil {
 				metrics.fallbacks.Add(1)
+				// Do not keep breaking this host next time; let it pass through.
+				markBypass(host)
 				writeBadGateway(tlsConn, request)
 				finalErr = err
 				return

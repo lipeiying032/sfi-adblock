@@ -257,6 +257,7 @@ public class ExtensionProfile: ObservableObject {
         #endif
         options["powerReportEnabled"] = await NSNumber(value: SharedPreferences.powerReportEnabled.get())
         options["mitmEnabled"] = NSNumber(value: await SharedPreferences.mitmEnabled.get())
+        options["mitmCAForce"] = NSNumber(value: await SharedPreferences.mitmCAForce.get())
         let mitmRoot = FilePath.sharedDirectory.appendingPathComponent("mitm", isDirectory: true)
         options["mitmCADir"] = NSString(string: mitmRoot.appendingPathComponent("ca", isDirectory: true).path)
         options["mitmModulesDir"] = NSString(string: mitmRoot.appendingPathComponent("modules", isDirectory: true).path)

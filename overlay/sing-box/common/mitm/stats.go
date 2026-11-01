@@ -2,6 +2,9 @@ package mitm
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"sync"
 	"sync/atomic"
 )
 
@@ -16,23 +19,41 @@ type counters struct {
 var metrics counters
 
 type statsSnapshot struct {
-	Enabled     bool   `json:"enabled"`
-	Active      bool   `json:"active"`
-	CAReady     bool   `json:"caReady"`
-	Modules     int    `json:"modules"`
-	Hosts       int    `json:"hosts"`
-	Rewrites    int    `json:"rewrites"`
-	Rules       int    `json:"rules"`
-	Intercepted int64  `json:"intercepted"`
-	Rewritten   int64  `json:"rewritten"`
-	Blocked     int64  `json:"blocked"`
-	Fallbacks   int64  `json:"fallbacks"`
-	ActiveConns int64  `json:"activeConnections"`
-	LastError   string `json:"lastError,omitempty"`
+	Enabled      bool   `json:"enabled"`
+	Active       bool   `json:"active"`
+	CAReady      bool   `json:"caReady"`
+	CATrusted    bool   `json:"caTrusted"`
+	Intercepting bool   `json:"intercepting"`
+	LowMemory    bool   `json:"lowMemory"`
+	Modules      int    `json:"modules"`
+	Hosts        int    `json:"hosts"`
+	Rewrites     int    `json:"rewrites"`
+	Rules        int    `json:"rules"`
+	Intercepted  int64  `json:"intercepted"`
+	Rewritten    int64  `json:"rewritten"`
+	Blocked      int64  `json:"blocked"`
+	Fallbacks    int64  `json:"fallbacks"`
+	ActiveConns  int64  `json:"activeConnections"`
+	LastError    string `json:"lastError,omitempty"`
 }
 
 // StatsJSON is consumed by the app settings page.
-func StatsJSON() string {
+// The app process reads the snapshot persisted by the tunnel process.
+func StatsJSON(directory string) string {
+	if currentConfig() == nil {
+		if directory == "" {
+			return "{}"
+		}
+		content, err := os.ReadFile(filepath.Join(directory, "stats.json"))
+		if err != nil {
+			return "{}"
+		}
+		return string(content)
+	}
+	return liveStatsJSON()
+}
+
+func liveStatsJSON() string {
 	current := currentConfig()
 	snapshot := statsSnapshot{
 		Enabled:     enabled.Load(),
@@ -46,6 +67,9 @@ func StatsJSON() string {
 	}
 	if current != nil {
 		snapshot.CAReady = current.ca != nil
+		snapshot.CATrusted = current.caTrusted
+		snapshot.Intercepting = current.tlsConfig != nil
+		snapshot.LowMemory = underMemoryPressure()
 		snapshot.Modules = current.modules
 		if current.matcher != nil {
 			snapshot.Hosts = current.matcher.Len()
@@ -58,6 +82,23 @@ func StatsJSON() string {
 		return "{}"
 	}
 	return string(content)
+}
+
+var flushAccess sync.Mutex
+
+func flushStats() {
+	caPath, _ := storedPaths()
+	if caPath == "" || currentConfig() == nil {
+		return
+	}
+	content := liveStatsJSON()
+	flushAccess.Lock()
+	defer flushAccess.Unlock()
+	temporary := filepath.Join(caPath, "stats.json.tmp")
+	if err := os.WriteFile(temporary, []byte(content), 0o600); err != nil {
+		return
+	}
+	_ = os.Rename(temporary, filepath.Join(caPath, "stats.json"))
 }
 
 var lastErrorValue atomic.Value

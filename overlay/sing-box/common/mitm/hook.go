@@ -74,6 +74,10 @@ func TryIntercept(ctx context.Context, conn net.Conn, metadata *adapter.InboundC
 	if current == nil || current.matcher == nil {
 		return conn, false
 	}
+	if current.tlsConfig == nil && len(current.block) == 0 {
+		// Nothing to decrypt and no rule to enforce.
+		return conn, false
+	}
 	port := metadata.Destination.Port
 	if port != 443 && port != 8443 {
 		return conn, false
@@ -101,14 +105,19 @@ func TryIntercept(ctx context.Context, conn net.Conn, metadata *adapter.InboundC
 			onClose(errBlockedByRule)
 		}
 		_ = conn.Close()
+		flushStats()
 		return conn, true
 	}
 	if !current.matcher.Match(host) || current.ca == nil || current.tlsConfig == nil {
 		return conn, false
 	}
+	if underMemoryPressure() {
+		metrics.fallbacks.Add(1)
+		return conn, false
+	}
 	if !acquireSlots() {
 		return conn, false
 	}
-	serveMITM(ctx, conn, metadata, host, dialer, onClose)
+	go serveMITM(ctx, conn, metadata, host, dialer, onClose)
 	return conn, true
 }

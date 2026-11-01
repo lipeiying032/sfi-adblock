@@ -98,6 +98,10 @@ jobs:
           make lib_install
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      - name: Test MITM module parser
+        working-directory: sing-box
+        run: go test ./common/mitm -count=1
+
       - name: Build Libbox.xcframework
         working-directory: sing-box
         env:
